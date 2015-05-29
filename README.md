@@ -52,6 +52,7 @@ Important settings (rebuild strategy specific. See for the other the https://git
             "analysis": {
                 "analyzer": {
                     // lines removed!
+                }
             }
         },
         "mappings": {
