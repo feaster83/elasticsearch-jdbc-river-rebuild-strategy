@@ -33,7 +33,7 @@ Use a feeder config like this:
     }
 }
 ```
-Important settings (rebuild strategy specific. See for the other the https://github.com/jprante/elasticsearch-jdbc project):
+Important settings (rebuild strategy specific. See for the other parameters: https://github.com/jprante/elasticsearch-jdbc#parameters-inside-of-the-jdbc-block):
 
 `alias` - The name of the alias that will be created.
 
