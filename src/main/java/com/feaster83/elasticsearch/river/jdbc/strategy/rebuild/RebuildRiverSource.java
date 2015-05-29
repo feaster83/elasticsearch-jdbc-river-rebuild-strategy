@@ -31,7 +31,7 @@ public class RebuildRiverSource<RC extends SimpleRiverContext> extends SimpleRiv
 
     @Override
     public String strategy() {
-        return "rebuild";
+        return StrategyConstants.STRATEGY_NAME;
     }
 
     @Override

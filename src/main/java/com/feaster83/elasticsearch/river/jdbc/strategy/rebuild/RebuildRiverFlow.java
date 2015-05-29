@@ -17,6 +17,7 @@ package com.feaster83.elasticsearch.river.jdbc.strategy.rebuild;
 
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.ESLoggerFactory;
+import org.xbib.elasticsearch.river.jdbc.strategy.simple.SimpleRiverContext;
 import org.xbib.elasticsearch.river.jdbc.strategy.simple.SimpleRiverFlow;
 
 /**
@@ -24,14 +25,13 @@ import org.xbib.elasticsearch.river.jdbc.strategy.simple.SimpleRiverFlow;
  *
  * @author <a href="feaster83@gmail.com">Jasper Huzen</a>
  */
-public class RebuildRiverFlow extends SimpleRiverFlow<RebuildRiverContext> {
+public class RebuildRiverFlow extends SimpleRiverFlow<SimpleRiverContext> {
 
     private static final ESLogger logger = ESLoggerFactory.getLogger("river.jdbc.RebuildRiverFlow");
 
-
     @Override
     public String strategy() {
-        return "rebuild";
+        return StrategyConstants.STRATEGY_NAME;
     }
 
     @Override
@@ -40,8 +40,8 @@ public class RebuildRiverFlow extends SimpleRiverFlow<RebuildRiverContext> {
     }
 
     @Override
-    public RebuildRiverContext newRiverContext() {
-        return new RebuildRiverContext();
+    public SimpleRiverContext newRiverContext() {
+        return new SimpleRiverContext();
     }
 
 
