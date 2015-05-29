@@ -35,11 +35,11 @@ Use a feeder config like this:
 ```
 Important settings (rebuild strategy specific. See for the other the https://github.com/jprante/elasticsearch-jdbc project):
 
-*alias* - The name of the created alias
+`alias` - The name of the created alias.
 
-*index_prefix* - The prefix of the generated index. A timestamp will be added
+`index_prefix` - The prefix of the generated index. A timestamp will be added after the prefix to make it unique.
 
-*template* - Path to a JSON file containing the template to create the index (settings, mappings)
+`template` - Path to a JSON file containing the template to create the index (settings, mappings).
 
 **Example of a template file (vehicles_index.json)**
 
