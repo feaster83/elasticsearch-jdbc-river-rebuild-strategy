@@ -2,10 +2,10 @@
 Rebuild strategy for the elasticsearch-jdbc-river (https://github.com/jprante/elasticsearch-jdbc)
 
 # Usage
-This strategy can be used to update Elasticsearch indexes periodically. It simple rebuilds the index at configured intervals. 
+This strategy can be used to update Elasticsearch indexes periodically. It simple rebuilds the index and optionally it does it at a specified interval. 
 
-The stategy uses an alias to map to the real index. 
-The alias will be switched to the new builded index after the rebuild (atomic operation). The old index will be deleted after the switch.
+The stategy uses an alias to map to the active index with documents. 
+The alias will be switched to the new builded index after the rebuild is completed (atomic operation). The old index will be deleted after the switch.
 
 # Configuration
 
