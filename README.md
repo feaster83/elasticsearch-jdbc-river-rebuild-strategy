@@ -26,9 +26,9 @@ Use a feeder config like this:
             "sql": [  "select 'car' as \"_type\", c.* from cars c" ,
                       "select 'bike' \"_type\",b.* from bikes b" ],
             "treat_binary_as_string": true,
-            "alias": "valuelist",
-            "index_prefix": "valuelist_",
-            "template": "valuelist_index.json"
+            "alias": "vehicles",
+            "index_prefix": "vehicles_",
+            "template": "vehicles_index.json"
         }
     }
 
@@ -40,7 +40,7 @@ Important settings (rebuild strategy specific. See for the other the https://git
 
 *template* - Path to a JSON file containing the template to create the index (settings, mappings)
 
-**Example of a template file (valuelist_index.json)**
+**Example of a template file (vehicles_index.json)**
 
     {
         "settings": {
