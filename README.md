@@ -1,4 +1,4 @@
-# elasticsearch-jdbc-river-rebuild-strategy
+# elasticsearch-jdbc-river Rebuild Strategy
 Rebuild strategy for the elasticsearch-jdbc-river (https://github.com/jprante/elasticsearch-jdbc)
 
 # Usage
