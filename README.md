@@ -51,7 +51,8 @@ Important settings (rebuild strategy specific. See for the other the https://git
             },
             "analysis": {
                 "analyzer": {
-                    <removed>
+                    // lines removed!
+            }
         },
         "mappings": {
             "car": {
@@ -62,7 +63,7 @@ Important settings (rebuild strategy specific. See for the other the https://git
                     "enabled": false
                 },
                 "properties": {
-                     <removed>
+                    // lines removed!
                 }
             },
             "bike": {
@@ -73,7 +74,7 @@ Important settings (rebuild strategy specific. See for the other the https://git
                     "enabled": false
                 },
                 "properties": {
-                      <removed>
+                    // lines removed!
                 }
             }
         }
