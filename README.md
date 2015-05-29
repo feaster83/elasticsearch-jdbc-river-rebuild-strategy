@@ -32,7 +32,7 @@ Use a feeder config like this:
         }
     }
 
-Important settings:
+Important settings (rebuild strategy specific. See for the other the https://github.com/jprante/elasticsearch-jdbc project):
 
 *alias* - The name of the created alias
 
@@ -40,3 +40,41 @@ Important settings:
 
 *template* - Path to a JSON file containing the template to create the index (settings, mappings)
 
+**Example of a template file (valuelist_index.json)**
+
+    {
+        "settings": {
+            "index" : {
+                "number_of_shards" : 1,
+                "refresh_interval" : 1,
+                "number_of_replicas" : 0
+            },
+            "analysis": {
+                "analyzer": {
+                    <removed>
+        },
+        "mappings": {
+            "car": {
+                "_source": {
+                    "enabled": true
+                },
+                "_all": {
+                    "enabled": false
+                },
+                "properties": {
+                     <removed>
+                }
+            },
+            "bike": {
+                "_source": {
+                    "enabled": true
+                },
+                "_all": {
+                    "enabled": false
+                },
+                "properties": {
+                      <removed>
+                }
+            }
+        }
+    }
