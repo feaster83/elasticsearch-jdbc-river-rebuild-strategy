@@ -21,7 +21,7 @@ Use a feeder config like this:
     "strategy" : "rebuild",
     "interval" : 60000,
     "jdbc" : {
-        "url": "jdbc:oracle:thin:@oracldb:1521:mydb",
+        "url": "jdbc:oracle:thin:@oracldbserver:1521:mydb",
         "user": "superman",
         "password": "secret",
         "sql": [  "select 'car' as \"_type\", c.* from cars c" ,
@@ -35,7 +35,7 @@ Use a feeder config like this:
 ```
 Important settings (rebuild strategy specific. See for the other the https://github.com/jprante/elasticsearch-jdbc project):
 
-`alias` - The name of the created alias.
+`alias` - The name of the alias that will be created.
 
 `index_prefix` - The prefix of the generated index. A timestamp will be added after the prefix to make it unique.
 
