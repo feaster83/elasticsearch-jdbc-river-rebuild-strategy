@@ -9,7 +9,9 @@ The alias will be switched to the new builded index after the rebuild is complet
 
 # Configuration
 
-Use a feeder config like this:
+First add the JAR file of this project to the classpath of the elasticsearch-jdbc-river. 
+
+then you can use a feeder config like this:
 
 ```json
 {
