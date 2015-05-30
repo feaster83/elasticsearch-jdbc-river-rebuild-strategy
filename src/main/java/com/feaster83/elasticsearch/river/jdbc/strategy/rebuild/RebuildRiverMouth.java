@@ -86,6 +86,7 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         }
 
         rebuild_index = index_prefix + (index_prefix.endsWith("_") ? "" : "_" ) + DateTimeFormat.forPattern("yyyy-MM-dd-hh-mm-ss-ms"). print(DateTimeUtils.currentTimeMillis());
+        index = rebuild_index;
 
         logger.info("creating index {}", rebuild_index);
 
@@ -120,7 +121,7 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         ingest.refresh(rebuild_index);
         if (metric.indices() != null && !metric.indices().isEmpty()) {
             for (String index : ImmutableSet.copyOf(metric.indices())) {
-                logger.info("stopping bulk mode for index {} and refreshing...", index);
+                logger.info("stopping bulk mode for index {} and refreshing...", rebuild_index);
                 ingest.stopBulk(index);
                 ingest.refresh(index);
             }
@@ -135,7 +136,6 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
 
     @Override
     public void index(IndexableObject object, boolean create) throws IOException {
-        this.index = rebuild_index;
         object.index(rebuild_index);
         super.index(object, create);
     }
