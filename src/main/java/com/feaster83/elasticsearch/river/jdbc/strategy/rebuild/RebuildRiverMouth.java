@@ -89,9 +89,9 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         createIndex();
 
         long startRefreshInterval = indexSettings != null ?
-                indexSettings.getAsTime("bulk." + rebuild_index + ".refresh_interval.start", indexSettings.getAsTime("alias.refresh_interval", TimeValue.timeValueSeconds(-1))).getMillis() : -1L;
+                indexSettings.getAsTime("bulk." + rebuild_index + ".refresh_interval.start", indexSettings.getAsTime("index.refresh_interval", TimeValue.timeValueSeconds(-1))).getMillis() : -1L;
         long stopRefreshInterval = indexSettings != null ?
-                indexSettings.getAsTime("bulk." + rebuild_index + ".refresh_interval.stop", indexSettings.getAsTime("alias.refresh_interval", TimeValue.timeValueSeconds(1))).getMillis() : 1000L;
+                indexSettings.getAsTime("bulk." + rebuild_index + ".refresh_interval.stop", indexSettings.getAsTime("index.refresh_interval", TimeValue.timeValueSeconds(1))).getMillis() : 1000L;
         ingest.startBulk(rebuild_index, startRefreshInterval, stopRefreshInterval);
     }
 
