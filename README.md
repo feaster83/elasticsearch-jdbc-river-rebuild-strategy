@@ -43,6 +43,8 @@ Important settings (rebuild strategy specific. See for the other parameters: htt
 
 `template` - [optional] Path to a JSON file containing the template to create the index (settings, mappings).
 
+`keep_last_indices` - [optional] Keep a number of old indices (last indices). The default value is: 0  
+
 **Example of a template file (vehicles_index.json)**
 
 ```json

@@ -18,10 +18,14 @@ package com.feaster83.elasticsearch.river.jdbc.strategy.rebuild;
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequestBuilder;
 import org.elasticsearch.action.admin.indices.alias.get.GetAliasesResponse;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequestBuilder;
+import org.elasticsearch.action.admin.indices.get.GetIndexResponse;
 import org.elasticsearch.common.collect.ImmutableSet;
 import org.elasticsearch.common.hppc.cursors.ObjectCursor;
+
+import org.elasticsearch.common.joda.time.DateTime;
 import org.elasticsearch.common.joda.time.DateTimeUtils;
 import org.elasticsearch.common.joda.time.format.DateTimeFormat;
+import org.elasticsearch.common.joda.time.format.DateTimeFormatter;
 import org.elasticsearch.common.lang3.StringUtils;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.ESLoggerFactory;
@@ -33,9 +37,10 @@ import org.xbib.elasticsearch.river.jdbc.strategy.simple.SimpleRiverMouth;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+
+
+import java.util.*;
+import java.util.concurrent.ExecutionException;
 
 /**
  * RebuildRiverMouth implementation based on the SimpleRiverMouth.
@@ -46,11 +51,15 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
 
     private final static ESLogger logger = ESLoggerFactory.getLogger("river.jdbc.RebuildRiverMouth");
 
+    private final DateTimeFormatter dateFormat =  DateTimeFormat.forPattern(StrategyConstants.DATE_FORMAT);
+
     private String index_prefix;
 
     private String alias;
 
     private String rebuild_index;
+
+    private int keep_last_indices;
 
     @Override
     public String strategy() {
@@ -72,9 +81,15 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         this.alias = (String) context.getDefinition().get("alias");
 
         if (context.getDefinition().containsKey("index_prefix")) {
-            this.index_prefix = (String) context.getDefinition().get("index_prefix");
+            this.index_prefix = context.getDefinition().get("index_prefix").toString();
         } else {
             this.index_prefix = alias + "_";
+        }
+
+        if (context.getDefinition().containsKey("keep_last_indices")) {
+           this.keep_last_indices = Integer.parseInt(context.getDefinition().get("keep_last_indices").toString());
+        } else {
+           this.keep_last_indices = 0;
         }
 
         return this;
@@ -123,7 +138,7 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
     }
 
     private String generateNewIndexName() {
-        return index_prefix + (index_prefix.endsWith("_") ? "" : "_" ) + DateTimeFormat.forPattern("yyyy-MM-dd-hh-mm-ss-ms"). print(DateTimeUtils.currentTimeMillis());
+        return index_prefix + (index_prefix.endsWith("_") ? "" : "_" ) + dateFormat.print(DateTimeUtils.currentTimeMillis());
     }
 
 
@@ -143,11 +158,14 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
             }
         }
 
-        List<String> existingIndexes = getCurrentActiveIndexes();
+        List<String> existingIndices = getCurrentActiveIndices();
+        switchAliasToNewIndex(existingIndices);
 
-        switchAliasToNewIndex(existingIndexes);
+        // Remove old indices
+        List<String> allExistingIndices = getAllExistingIndices();
+        allExistingIndices.remove(rebuild_index);
 
-        removeOldIndexes(existingIndexes);
+        removeOldIndices(allExistingIndices);
 
         if (!ingest.isShutdown()) {
             ingest.shutdown();
@@ -160,35 +178,84 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         super.index(object, create);
     }
 
-    private List<String> getCurrentActiveIndexes() {
+    private List<String> getOrderedIndexList(List<String> indexList) {
+        
+        Map<DateTime, String> dateIndexMap = new HashMap<>();
+        List<DateTime> datetimeList = new ArrayList<>();
+
+        Iterator<String> indexListIterator = indexList.iterator();
+        while (indexListIterator.hasNext()) {
+            String foundIndex = indexListIterator.next();
+            DateTime indexDateTime = dateFormat.parseDateTime(foundIndex.substring(foundIndex.lastIndexOf("_")+1));
+            dateIndexMap.put(indexDateTime, foundIndex);
+            datetimeList.add(indexDateTime);
+            logger.info("Adding index {} to map with datetime {}", foundIndex, indexDateTime);
+        }
+
+        datetimeList.sort(new Comparator<DateTime>() {
+            @Override
+            public int compare(DateTime o1, DateTime o2) {
+                return o1.compareTo(o2);
+            }
+        });
+
+        List<String> orderedIndexList = new ArrayList<>();
+        Iterator<DateTime> dateTimeSetIterator = datetimeList.iterator();
+        while(dateTimeSetIterator.hasNext()) {
+            orderedIndexList.add(dateIndexMap.get(dateTimeSetIterator.next()));
+        }
+
+        return orderedIndexList;
+    }
+
+    private List<String> getAllExistingIndices() {
+        try {
+            GetIndexResponse indexResponse = ingest.client().admin().indices().prepareGetIndex().addIndices(index_prefix + "*").execute().get();
+
+            logger.debug("Found indexes with index_prefix is \"{}\": {}", index_prefix, indexResponse.indices().length);
+
+            List<String> indexList =  new ArrayList<String>(Arrays.asList(indexResponse.indices()));
+
+            return indexList;
+
+        } catch (InterruptedException e) {
+           logger.error(e.getMessage(), e);
+           throw new RuntimeException(e.getMessage());
+        } catch (ExecutionException e) {
+           logger.error(e.getMessage(), e);
+           throw new RuntimeException(e.getMessage());
+        }
+    }
+
+    private List<String> getCurrentActiveIndices() {
         GetAliasesResponse getAliasesResponse = ingest.client().admin().indices().prepareGetAliases(alias).execute().actionGet();
 
-        List<String> existingIndexes = new ArrayList<>();
+        List<String> existingIndices = new ArrayList<>();
         Iterator<ObjectCursor<String>> keysIterator = getAliasesResponse.getAliases().keys().iterator();
         while (keysIterator.hasNext()) {
             String existingIndex = keysIterator.next().value;
-            existingIndexes.add(existingIndex);
+            existingIndices.add(existingIndex);
         }
 
-        return existingIndexes;
+        return existingIndices;
     }
 
-    private void removeOldIndexes(List<String> existingIndexes) {
-        Iterator<String> existingIndexesIterator2 = existingIndexes.iterator();
-        while (existingIndexesIterator2.hasNext()) {
-            String existingIndex = existingIndexesIterator2.next();
+    private void removeOldIndices(List<String> indices) {
+        List<String> orderedIndexList = getOrderedIndexList(indices);
+        for (int i = 0; i < (orderedIndexList.size() - keep_last_indices); i++) {
+            String existingIndex = orderedIndexList.get(i);
             logger.info("DELETE existing index {}", existingIndex);
             ingest.deleteIndex(existingIndex);
         }
     }
 
-    private void switchAliasToNewIndex(List<String> existingIndexes) {
+    private void switchAliasToNewIndex(List<String> existingIndices) {
         IndicesAliasesRequestBuilder prepareAliasesRequest = ingest.client().admin().indices().prepareAliases();
         prepareAliasesRequest.addAlias(rebuild_index, alias).execute().actionGet().isAcknowledged();
 
-        Iterator<String> existingIndexesIterator = existingIndexes.iterator();
-        while (existingIndexesIterator.hasNext()) {
-            prepareAliasesRequest.removeAlias(existingIndexesIterator.next(), alias);
+        Iterator<String> existingIndicesIterator = existingIndices.iterator();
+        while (existingIndicesIterator.hasNext()) {
+            prepareAliasesRequest.removeAlias(existingIndicesIterator.next(), alias);
         }
 
         prepareAliasesRequest.execute();
