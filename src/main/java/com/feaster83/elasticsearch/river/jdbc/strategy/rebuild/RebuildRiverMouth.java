@@ -127,7 +127,11 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
             }
         }
 
-        switchAliasAndRemoveOldIndex();
+        List<String> existingIndexes = getCurrentActiveIndexes();
+
+        switchAliasToNewIndex(existingIndexes);
+
+        removeOldIndexes(existingIndexes);
 
         if (!ingest.isShutdown()) {
             ingest.shutdown();
@@ -140,7 +144,7 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         super.index(object, create);
     }
 
-    private void switchAliasAndRemoveOldIndex() {
+    private List<String> getCurrentActiveIndexes() {
         GetAliasesResponse getAliasesResponse = ingest.client().admin().indices().prepareGetAliases(alias).execute().actionGet();
 
         List<String> existingIndexes = new ArrayList<>();
@@ -150,6 +154,19 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
             existingIndexes.add(existingIndex);
         }
 
+        return existingIndexes;
+    }
+
+    private void removeOldIndexes(List<String> existingIndexes) {
+        Iterator<String> existingIndexesIterator2 = existingIndexes.iterator();
+        while (existingIndexesIterator2.hasNext()) {
+            String existingIndex = existingIndexesIterator2.next();
+            logger.info("DELETE existing index {}", existingIndex);
+            ingest.deleteIndex(existingIndex);
+        }
+    }
+
+    private void switchAliasToNewIndex(List<String> existingIndexes) {
         IndicesAliasesRequestBuilder prepareAliasesRequest = ingest.client().admin().indices().prepareAliases();
         prepareAliasesRequest.addAlias(rebuild_index, alias).execute().actionGet().isAcknowledged();
 
@@ -159,13 +176,6 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         }
 
         prepareAliasesRequest.execute();
-
-        Iterator<String> existingIndexesIterator2 = existingIndexes.iterator();
-        while (existingIndexesIterator2.hasNext()) {
-            String existingIndex = existingIndexesIterator2.next();
-            logger.info("DELETE existing index {}", existingIndex);
-            ingest.deleteIndex(existingIndex);
-        }
     }
 
     @Override
