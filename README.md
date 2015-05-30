@@ -27,7 +27,7 @@ then you can use a feeder config like this:
         "user": "superman",
         "password": "secret",
         "sql": [  "select 'car' as \"_type\", c.* from cars c" ,
-                  "select 'bike' \"_type\",b.* from bikes b" ],
+                  "select 'bike' as \"_type\", b.* from bikes b" ],
         "treat_binary_as_string": true,
         "alias": "vehicles",
         "index_prefix": "vehicles_",
