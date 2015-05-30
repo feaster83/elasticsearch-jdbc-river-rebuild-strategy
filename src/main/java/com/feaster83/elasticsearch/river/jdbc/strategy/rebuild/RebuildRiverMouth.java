@@ -21,6 +21,7 @@ import org.elasticsearch.common.collect.ImmutableSet;
 import org.elasticsearch.common.hppc.cursors.ObjectCursor;
 import org.elasticsearch.common.joda.time.DateTimeUtils;
 import org.elasticsearch.common.joda.time.format.DateTimeFormat;
+import org.elasticsearch.common.lang3.StringUtils;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.ESLoggerFactory;
 import org.elasticsearch.common.unit.TimeValue;
@@ -63,8 +64,18 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
     @Override
     public RebuildRiverMouth<RC> setRiverContext(RC context) {
         super.setRiverContext(context);
+
+        if (!context.getDefinition().containsKey("alias")) {
+            logger.error("'alias' argument is missing!");
+        }
         this.alias = (String) context.getDefinition().get("alias");
-        this.index_prefix = (String) context.getDefinition().get("index_prefix");
+
+        if (context.getDefinition().containsKey("index_prefix")) {
+            this.index_prefix = (String) context.getDefinition().get("index_prefix");
+        } else {
+            this.index_prefix = alias + "_";
+        }
+
         return this;
     }
 
@@ -74,14 +85,22 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
             ingest = ingestFactory.create();
         }
 
-        rebuild_index = index_prefix + "_" + DateTimeFormat.forPattern("yyyy-MM-dd-hh-mm-ss-ms"). print(DateTimeUtils.currentTimeMillis());
+        rebuild_index = index_prefix + (index_prefix.endsWith("_") ? "" : "_" ) + DateTimeFormat.forPattern("yyyy-MM-dd-hh-mm-ss-ms"). print(DateTimeUtils.currentTimeMillis());
 
         logger.info("creating index {}", rebuild_index);
 
-        String templateSource = context.getDefinition().get("template").toString();
-        byte[] fileBytes = Files.readAllBytes(new File(templateSource).toPath());
-
-        ingest.client().admin().indices().prepareCreate(rebuild_index).setSource(fileBytes).execute().actionGet();
+        if (context.getDefinition().containsKey("template")) {
+            String templateSource = context.getDefinition().get("template").toString();
+            File templateFile = new File(templateSource);
+            if (StringUtils.isNotBlank(templateSource) && !templateFile.exists()) {
+                logger.error("Template file {} can not be found! Feeder will be stopped.", templateSource);
+                System.exit(-1);
+            }
+            byte[] fileBytes = Files.readAllBytes(templateFile.toPath());
+            ingest.client().admin().indices().prepareCreate(rebuild_index).setSource(fileBytes).execute().actionGet();
+        } else {
+            ingest.client().admin().indices().prepareCreate(rebuild_index).execute().actionGet();
+        }
 
         long startRefreshInterval = indexSettings != null ?
                 indexSettings.getAsTime("bulk." + rebuild_index + ".refresh_interval.start", indexSettings.getAsTime("alias.refresh_interval", TimeValue.timeValueSeconds(-1))).getMillis() : -1L;
