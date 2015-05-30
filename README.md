@@ -31,7 +31,8 @@ then you can use a feeder config like this:
         "treat_binary_as_string": true,
         "alias": "vehicles",
         "index_prefix": "vehicles_",
-        "template": "vehicles_index.json"
+        "template": "vehicles_index.json",
+        "keep_last_indices": 3
     }
 }
 ```
