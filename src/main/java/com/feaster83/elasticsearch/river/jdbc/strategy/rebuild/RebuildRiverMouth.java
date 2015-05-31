@@ -21,11 +21,7 @@ import org.elasticsearch.action.admin.indices.create.CreateIndexRequestBuilder;
 import org.elasticsearch.action.admin.indices.get.GetIndexResponse;
 import org.elasticsearch.common.collect.ImmutableSet;
 import org.elasticsearch.common.hppc.cursors.ObjectCursor;
-
 import org.elasticsearch.common.joda.time.DateTime;
-import org.elasticsearch.common.joda.time.DateTimeUtils;
-import org.elasticsearch.common.joda.time.format.DateTimeFormat;
-import org.elasticsearch.common.joda.time.format.DateTimeFormatter;
 import org.elasticsearch.common.lang3.StringUtils;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.ESLoggerFactory;
@@ -37,8 +33,6 @@ import org.xbib.elasticsearch.river.jdbc.strategy.simple.SimpleRiverMouth;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-
-
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 
@@ -50,8 +44,6 @@ import java.util.concurrent.ExecutionException;
 public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRiverMouth<RC> {
 
     private final static ESLogger logger = ESLoggerFactory.getLogger("river.jdbc.RebuildRiverMouth");
-
-    private final DateTimeFormatter dateFormat =  DateTimeFormat.forPattern(StrategyConstants.DATE_FORMAT);
 
     private String index_prefix;
 
@@ -138,7 +130,7 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
     }
 
     private String generateNewIndexName() {
-        return index_prefix + (index_prefix.endsWith("_") ? "" : "_" ) + dateFormat.print(DateTimeUtils.currentTimeMillis());
+        return index_prefix + (index_prefix.endsWith("_") ? "" : "_" ) + TimestampUtil.getTimestamp();
     }
 
 
@@ -186,7 +178,7 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         Iterator<String> indexListIterator = indexList.iterator();
         while (indexListIterator.hasNext()) {
             String foundIndex = indexListIterator.next();
-            DateTime indexDateTime = dateFormat.parseDateTime(foundIndex.substring(foundIndex.lastIndexOf("_")+1));
+            DateTime indexDateTime = TimestampUtil.getDateTime(foundIndex.substring(foundIndex.lastIndexOf("_")+1));
             dateIndexMap.put(indexDateTime, foundIndex);
             datetimeList.add(indexDateTime);
             logger.info("Adding index {} to map with datetime {}", foundIndex, indexDateTime);
