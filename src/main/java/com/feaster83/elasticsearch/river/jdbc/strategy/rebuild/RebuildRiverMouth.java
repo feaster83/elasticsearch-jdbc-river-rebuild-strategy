@@ -246,9 +246,17 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         prepareAliasesRequest.addAlias(rebuild_index, alias).execute().actionGet().isAcknowledged();
 
         Iterator<String> existingIndicesIterator = existingIndices.iterator();
+
         while (existingIndicesIterator.hasNext()) {
-            prepareAliasesRequest.removeAlias(existingIndicesIterator.next(), alias);
+            final String exisistingIndex = existingIndicesIterator.next();
+            logger.info("Found existing alias binding: [{} -> {}]", alias, exisistingIndex);
+            if (exisistingIndex.startsWith(index_prefix)) {
+                logger.info("Mark alias binding: [{} -> {}] for unbinding", alias, exisistingIndex);
+                prepareAliasesRequest.removeAlias(exisistingIndex, alias);
+            }
         }
+
+        logger.info("Execute alias switch");
 
         prepareAliasesRequest.execute();
     }
