@@ -13,7 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.feaster83.elasticsearch.river.jdbc.strategy.rebuild;
+package org.xbib.elasticsearch.jdbc.strategy.standard;
 
-public class RebuildRiverMouthTest {
+public final class StrategyConstants {
+    public final static String STRATEGY_NAME = "rebuild";
+    public final static String DATE_FORMAT = "yyyy-MM-dd-hh-mm-ss-SSS";
+
 }

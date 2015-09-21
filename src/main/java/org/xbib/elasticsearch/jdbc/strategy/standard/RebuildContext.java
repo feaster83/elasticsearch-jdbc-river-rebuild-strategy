@@ -13,21 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.feaster83.elasticsearch.river.jdbc.strategy.rebuild;
+package org.xbib.elasticsearch.jdbc.strategy.standard;
 
-import org.elasticsearch.common.logging.ESLogger;
-import org.elasticsearch.common.logging.ESLoggerFactory;
-import org.xbib.elasticsearch.river.jdbc.strategy.simple.SimpleRiverContext;
-import org.xbib.elasticsearch.river.jdbc.strategy.simple.SimpleRiverFlow;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * River flow implementation for the 'rebuild' strategy
  *
  * @author <a href="feaster83@gmail.com">Jasper Huzen</a>
  */
-public class RebuildRiverFlow extends SimpleRiverFlow<SimpleRiverContext> {
+public class RebuildContext extends StandardContext {
 
-    private static final ESLogger logger = ESLoggerFactory.getLogger("river.jdbc.RebuildRiverFlow");
+    private final static Logger logger = LogManager.getLogger("importer.jdbc.context.rebuild");
 
     @Override
     public String strategy() {
@@ -35,15 +33,8 @@ public class RebuildRiverFlow extends SimpleRiverFlow<SimpleRiverContext> {
     }
 
     @Override
-    public RebuildRiverFlow newInstance() {
-        return new RebuildRiverFlow();
+    public RebuildContext newInstance() {
+        return new RebuildContext();
     }
-
-    @Override
-    public SimpleRiverContext newRiverContext() {
-        return new SimpleRiverContext();
-    }
-
-
 
 }

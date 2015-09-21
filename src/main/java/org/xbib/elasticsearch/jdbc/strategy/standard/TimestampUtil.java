@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.feaster83.elasticsearch.river.jdbc.strategy.rebuild;
+package org.xbib.elasticsearch.jdbc.strategy.standard;
 
 import org.elasticsearch.common.joda.time.DateTime;
 import org.elasticsearch.common.joda.time.DateTimeUtils;

@@ -1,5 +1,6 @@
 # Rebuild strategy
-Rebuild strategy for the elasticsearch-jdbc-river (https://github.com/jprante/elasticsearch-jdbc)
+Rebuild strategy for the elasticsearch-jdbc-river (https://github.com/jprante/elasticsearch-jdbc) 
+The master branch supports elasticsearch-jdbc version 1.7.0.1 and higher. The 1.4 branch supports elasticsearch-jdbc versions till 1.5.2.0.
 
 # Usage
 This strategy can be used to update Elasticsearch indices periodically. It simply rebuilds the index and it can be done at a specified interval. 
