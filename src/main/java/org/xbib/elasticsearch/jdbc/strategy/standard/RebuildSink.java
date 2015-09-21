@@ -13,8 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.feaster83.elasticsearch.river.jdbc.strategy.rebuild;
+package org.xbib.elasticsearch.jdbc.strategy.standard;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequestBuilder;
 import org.elasticsearch.action.admin.indices.alias.get.GetAliasesResponse;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequestBuilder;
@@ -23,12 +25,8 @@ import org.elasticsearch.common.collect.ImmutableSet;
 import org.elasticsearch.common.hppc.cursors.ObjectCursor;
 import org.elasticsearch.common.joda.time.DateTime;
 import org.elasticsearch.common.lang3.StringUtils;
-import org.elasticsearch.common.logging.ESLogger;
-import org.elasticsearch.common.logging.ESLoggerFactory;
 import org.elasticsearch.common.unit.TimeValue;
-import org.xbib.elasticsearch.plugin.jdbc.util.IndexableObject;
-import org.xbib.elasticsearch.river.jdbc.strategy.simple.SimpleRiverContext;
-import org.xbib.elasticsearch.river.jdbc.strategy.simple.SimpleRiverMouth;
+import org.xbib.elasticsearch.common.util.IndexableObject;
 
 import java.io.File;
 import java.io.IOException;
@@ -36,14 +34,25 @@ import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 
+import static org.elasticsearch.common.lang3.StringUtils.isBlank;
+import static org.elasticsearch.common.lang3.StringUtils.isNotBlank;
+
 /**
  * RebuildRiverMouth implementation based on the SimpleRiverMouth.
  *
  * @author <a href="feaster83@gmail.com">Jasper Huzen</a>
  */
-public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRiverMouth<RC> {
+public class RebuildSink<C extends RebuildContext> extends StandardSink {
 
-    private final static ESLogger logger = ESLoggerFactory.getLogger("river.jdbc.RebuildRiverMouth");
+    private final static Logger logger = LogManager.getLogger("importer.jdbc.sink.rebuild");
+
+    private static final String ALIAS_SETTING = "alias";
+
+    private static final String INDEX_PREFIX_SETTING = "index_prefix";
+
+    private static final String KEEP_LAST_INDICES_SETTING = "keep_last_indices";
+
+    private static final String TEMPLATE_SETTING = "template";
 
     private String index_prefix;
 
@@ -59,29 +68,29 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
     }
 
     @Override
-    public RebuildRiverMouth<RC> newInstance() {
-        return new RebuildRiverMouth<RC>();
+    public RebuildSink newInstance() {
+        return new RebuildSink();
     }
 
     @Override
-    public RebuildRiverMouth<RC> setRiverContext(RC context) {
-        super.setRiverContext(context);
+    public RebuildSink<C> setContext(StandardContext context) {
+        super.setContext(context);
 
-        if (!context.getDefinition().containsKey("alias")) {
+        if (isBlank(context.getSettings().get(ALIAS_SETTING))) {
             logger.error("'alias' argument is missing!");
         }
-        this.alias = (String) context.getDefinition().get("alias");
+        this.alias = context.getSettings().get(ALIAS_SETTING);
 
-        if (context.getDefinition().containsKey("index_prefix")) {
-            this.index_prefix = context.getDefinition().get("index_prefix").toString();
+        if (isNotBlank(context.getSettings().get(INDEX_PREFIX_SETTING))) {
+            this.index_prefix = context.getSettings().get(INDEX_PREFIX_SETTING);
         } else {
             this.index_prefix = alias + "_";
         }
 
-        if (context.getDefinition().containsKey("keep_last_indices")) {
-           this.keep_last_indices = Integer.parseInt(context.getDefinition().get("keep_last_indices").toString());
+        if (isNotBlank(context.getSettings().get(KEEP_LAST_INDICES_SETTING))) {
+            this.keep_last_indices = Integer.parseInt(context.getSettings().get(KEEP_LAST_INDICES_SETTING));
         } else {
-           this.keep_last_indices = 0;
+            this.keep_last_indices = 0;
         }
 
         return this;
@@ -89,10 +98,18 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
 
     @Override
     public synchronized void beforeFetch() throws IOException {
-        if (ingest == null || ingest.isShutdown()) {
-            ingest = ingestFactory.create();
+        if (ingest == null) {
+            if (context.getIngestFactory() != null) {
+                ingest = context.getIngestFactory().create();
+                ingest.setMetric(getMetric());
+            } else {
+                logger.warn("no ingest factory found");
+            }
         }
-
+        if (ingest == null) {
+            logger.warn("no ingest found");
+            return;
+        }
         createIndex();
 
         long startRefreshInterval = indexSettings != null ?
@@ -111,7 +128,7 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         CreateIndexRequestBuilder createIndexRequestBuilder =
                 ingest.client().admin().indices().prepareCreate(rebuild_index);
 
-        if (context.getDefinition().containsKey("template")) {
+        if (isNotBlank(context.getSettings().get(TEMPLATE_SETTING))) {
             addTemplateToIndexRequest(createIndexRequestBuilder);
         }
 
@@ -119,7 +136,7 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
     }
 
     private void addTemplateToIndexRequest(CreateIndexRequestBuilder createIndexRequestBuilder) throws IOException {
-        String templateSource = context.getDefinition().get("template").toString();
+        String templateSource = context.getSettings().get(TEMPLATE_SETTING);
         File templateFile = new File(templateSource);
         if (StringUtils.isNotBlank(templateSource) && !templateFile.exists()) {
             logger.error("Template file {} can not be found! Feeder will be stopped.", templateSource);
@@ -136,17 +153,19 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
 
     @Override
     public synchronized void afterFetch() throws IOException {
-        if (ingest == null || ingest.isShutdown()) {
-            ingest = ingestFactory.create();
+        if (ingest == null) {
+            ingest = context.getIngestFactory().create();
         }
-        flush();
+
+        flushIngest();
+
         ingest.stopBulk(rebuild_index);
-        ingest.refresh(rebuild_index);
-        if (metric.indices() != null && !metric.indices().isEmpty()) {
-            for (String index : ImmutableSet.copyOf(metric.indices())) {
+        ingest.refreshIndex(rebuild_index);
+        if (getMetric().indices() != null && !getMetric().indices().isEmpty()) {
+            for (String index : ImmutableSet.copyOf(getMetric().indices())) {
                 logger.info("stopping bulk mode for index {} and refreshing...", rebuild_index);
                 ingest.stopBulk(index);
-                ingest.refresh(index);
+                ingest.refreshIndex(index);
             }
         }
 
@@ -159,9 +178,10 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
 
         removeOldIndices(allExistingIndices);
 
-        if (!ingest.isShutdown()) {
+        if (ingest != null) {
             ingest.shutdown();
         }
+        ingest = null;
     }
 
     @Override
@@ -175,10 +195,8 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         Map<DateTime, String> dateIndexMap = new HashMap<>();
         List<DateTime> datetimeList = new ArrayList<>();
 
-        Iterator<String> indexListIterator = indexList.iterator();
-        while (indexListIterator.hasNext()) {
-            String foundIndex = indexListIterator.next();
-            DateTime indexDateTime = TimestampUtil.getDateTime(foundIndex.substring(foundIndex.lastIndexOf("_")+1));
+        for (String foundIndex : indexList) {
+            DateTime indexDateTime = TimestampUtil.getDateTime(foundIndex.substring(foundIndex.lastIndexOf("_") + 1));
             dateIndexMap.put(indexDateTime, foundIndex);
             datetimeList.add(indexDateTime);
             logger.info("Adding index {} to map with datetime {}", foundIndex, indexDateTime);
@@ -192,9 +210,8 @@ public class RebuildRiverMouth<RC extends SimpleRiverContext> extends SimpleRive
         });
 
         List<String> orderedIndexList = new ArrayList<>();
-        Iterator<DateTime> dateTimeSetIterator = datetimeList.iterator();
-        while(dateTimeSetIterator.hasNext()) {
-            orderedIndexList.add(dateIndexMap.get(dateTimeSetIterator.next()));
+        for (DateTime aDatetimeList : datetimeList) {
+            orderedIndexList.add(dateIndexMap.get(aDatetimeList));
         }
 
         return orderedIndexList;
