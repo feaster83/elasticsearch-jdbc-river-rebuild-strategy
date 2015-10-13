@@ -27,6 +27,7 @@ import org.elasticsearch.common.joda.time.DateTime;
 import org.elasticsearch.common.lang3.StringUtils;
 import org.elasticsearch.common.unit.TimeValue;
 import org.xbib.elasticsearch.common.util.IndexableObject;
+import org.xbib.elasticsearch.support.client.Ingest;
 
 import java.io.File;
 import java.io.IOException;
@@ -98,14 +99,8 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
 
     @Override
     public synchronized void beforeFetch() throws IOException {
-        if (ingest == null) {
-            if (context.getIngestFactory() != null) {
-                ingest = context.getIngestFactory().create();
-                ingest.setMetric(getMetric());
-            } else {
-                logger.warn("no ingest factory found");
-            }
-        }
+        Ingest ingest = context.getOrCreateIngest(getMetric());
+
         if (ingest == null) {
             logger.warn("no ingest found");
             return;
@@ -120,6 +115,7 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
     }
 
     private void createIndex() throws IOException {
+        Ingest ingest = context.getOrCreateIngest(getMetric());
         rebuild_index = generateNewIndexName();
         index = rebuild_index;
 
@@ -153,11 +149,11 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
 
     @Override
     public synchronized void afterFetch() throws IOException {
-        if (ingest == null) {
-            ingest = context.getIngestFactory().create();
-        }
+        Ingest ingest = context.getIngest();
 
-        flushIngest();
+        if(ingest == null) {
+            return;
+        }
 
         ingest.stopBulk(rebuild_index);
         ingest.refreshIndex(rebuild_index);
@@ -177,11 +173,6 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
         allExistingIndices.remove(rebuild_index);
 
         removeOldIndices(allExistingIndices);
-
-        if (ingest != null) {
-            ingest.shutdown();
-        }
-        ingest = null;
     }
 
     @Override
@@ -218,6 +209,7 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
     }
 
     private List<String> getAllExistingIndices() {
+        Ingest ingest = context.getIngest();
         try {
             GetIndexResponse indexResponse = ingest.client().admin().indices().prepareGetIndex().addIndices(index_prefix + "*").execute().get();
 
@@ -237,6 +229,7 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
     }
 
     private List<String> getCurrentActiveIndices() {
+        Ingest ingest = context.getIngest();
         GetAliasesResponse getAliasesResponse = ingest.client().admin().indices().prepareGetAliases(alias).execute().actionGet();
 
         List<String> existingIndices = new ArrayList<>();
@@ -250,6 +243,7 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
     }
 
     private void removeOldIndices(List<String> indices) {
+        Ingest ingest = context.getIngest();
         List<String> orderedIndexList = getOrderedIndexList(indices);
         for (int i = 0; i < (orderedIndexList.size() - keep_last_indices); i++) {
             String existingIndex = orderedIndexList.get(i);
@@ -259,6 +253,7 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
     }
 
     private void switchAliasToNewIndex(List<String> existingIndices) {
+        Ingest ingest = context.getIngest();
         IndicesAliasesRequestBuilder prepareAliasesRequest = ingest.client().admin().indices().prepareAliases();
         prepareAliasesRequest.addAlias(rebuild_index, alias).execute().actionGet().isAcknowledged();
 
