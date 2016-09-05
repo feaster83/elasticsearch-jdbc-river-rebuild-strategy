@@ -15,28 +15,34 @@
  */
 package org.xbib.elasticsearch.jdbc.strategy.standard;
 
+import com.carrotsearch.hppc.cursors.ObjectCursor;
+import com.google.common.collect.ImmutableSet;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.elasticsearch.action.admin.indices.alias.IndicesAliasesAction;
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequestBuilder;
+import org.elasticsearch.action.admin.indices.alias.get.GetAliasesAction;
 import org.elasticsearch.action.admin.indices.alias.get.GetAliasesResponse;
+import org.elasticsearch.action.admin.indices.create.CreateIndexAction;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequestBuilder;
+import org.elasticsearch.action.admin.indices.get.GetIndexAction;
 import org.elasticsearch.action.admin.indices.get.GetIndexResponse;
-import org.elasticsearch.common.collect.ImmutableSet;
-import org.elasticsearch.common.hppc.cursors.ObjectCursor;
-import org.elasticsearch.common.joda.time.DateTime;
-import org.elasticsearch.common.lang3.StringUtils;
+import org.elasticsearch.client.ElasticsearchClient;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.unit.ByteSizeValue;
+import org.joda.time.DateTime;
 import org.elasticsearch.common.unit.TimeValue;
 import org.xbib.elasticsearch.common.util.IndexableObject;
-import org.xbib.elasticsearch.support.client.Ingest;
+import org.xbib.elasticsearch.helper.client.ClientAPI;
+import org.xbib.elasticsearch.helper.client.ClientBuilder;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
 
-import static org.elasticsearch.common.lang3.StringUtils.isBlank;
-import static org.elasticsearch.common.lang3.StringUtils.isNotBlank;
+import static org.apache.logging.log4j.util.Strings.isBlank;
+import static org.apache.logging.log4j.util.Strings.isNotBlank;
 
 /**
  * RebuildRiverMouth implementation based on the SimpleRiverMouth.
@@ -97,44 +103,89 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
         return this;
     }
 
+
+    private ClientAPI createClient(Settings settings) {
+        Settings.Builder settingsBuilder = Settings.settingsBuilder()
+                .put("cluster.name", settings.get("elasticsearch.cluster.name", settings.get("elasticsearch.cluster", "elasticsearch")))
+                .putArray("host", settings.getAsArray("elasticsearch.host"))
+                .put("port", settings.getAsInt("elasticsearch.port", 9300))
+                .put("sniff", settings.getAsBoolean("elasticsearch.sniff", false))
+                .put("autodiscover", settings.getAsBoolean("elasticsearch.autodiscover", false))
+                .put("name", "importer") // prevents lookup of names.txt, we don't have it
+                .put("client.transport.ignore_cluster_name", false) // ignore cluster name setting
+                .put("client.transport.ping_timeout", settings.getAsTime("elasticsearch.timeout", TimeValue.timeValueSeconds(5))) //  ping timeout
+                .put("client.transport.nodes_sampler_interval", settings.getAsTime("elasticsearch.timeout", TimeValue.timeValueSeconds(5))); // for sniff sampling
+        // optional found.no transport plugin
+        if (settings.get("transport.type") != null) {
+            settingsBuilder.put("transport.type", settings.get("transport.type"));
+        }
+        // copy found.no transport settings
+        Settings foundTransportSettings = settings.getAsSettings("transport.found");
+        if (foundTransportSettings != null) {
+            Map<String,String> foundTransportSettingsMap = foundTransportSettings.getAsMap();
+            for (Map.Entry<String,String> entry : foundTransportSettingsMap.entrySet()) {
+                settingsBuilder.put("transport.found." + entry.getKey(), entry.getValue());
+            }
+        }
+        return ClientBuilder.builder()
+                .put(settingsBuilder.build())
+                .put(ClientBuilder.MAX_ACTIONS_PER_REQUEST, settings.getAsInt("max_bulk_actions", 10000))
+                .put(ClientBuilder.MAX_CONCURRENT_REQUESTS, settings.getAsInt("max_concurrent_bulk_requests",
+                        Runtime.getRuntime().availableProcessors() * 2))
+                .put(ClientBuilder.MAX_VOLUME_PER_REQUEST, settings.getAsBytesSize("max_bulk_volume", ByteSizeValue.parseBytesSizeValue("10m", "")))
+                .put(ClientBuilder.FLUSH_INTERVAL, settings.getAsTime("flush_interval", TimeValue.timeValueSeconds(5)))
+                .setMetric(getMetric())
+                .toBulkTransportClient();
+    }
+
+
+
     @Override
     public synchronized void beforeFetch() throws IOException {
-        Ingest ingest = context.getOrCreateIngest(getMetric());
 
-        if (ingest == null) {
-            logger.warn("no ingest found");
-            return;
+        Settings settings = context.getSettings();
+        String index = settings.get("index", "jdbc");
+        String type = settings.get("type", "jdbc");
+
+        if(clientAPI == null){
+            clientAPI = createClient(settings);
         }
-        createIndex();
 
-        long startRefreshInterval = indexSettings != null ?
-                indexSettings.getAsTime("bulk." + rebuild_index + ".refresh_interval.start", indexSettings.getAsTime("index.refresh_interval", TimeValue.timeValueSeconds(-1))).getMillis() : -1L;
-        long stopRefreshInterval = indexSettings != null ?
-                indexSettings.getAsTime("bulk." + rebuild_index + ".refresh_interval.stop", indexSettings.getAsTime("index.refresh_interval", TimeValue.timeValueSeconds(1))).getMillis() : 1000L;
-        ingest.startBulk(rebuild_index, startRefreshInterval, stopRefreshInterval);
+        this.setIndex(index);
+        this.setType(type);
+
+        createIndex();
+        long startRefreshInterval = settings != null ?
+                settings.getAsTime("bulk." + rebuild_index + ".refresh_interval.start", settings.getAsTime("index.refresh_interval", TimeValue.timeValueSeconds(-1))).getMillis() : -1L;
+        long stopRefreshInterval = settings != null ?
+                settings.getAsTime("bulk." + rebuild_index + ".refresh_interval.stop", settings.getAsTime("index.refresh_interval", TimeValue.timeValueSeconds(1))).getMillis() : 1000L;
+        clientAPI.startBulk(rebuild_index, startRefreshInterval, stopRefreshInterval);
     }
 
     private void createIndex() throws IOException {
-        Ingest ingest = context.getOrCreateIngest(getMetric());
+        if(clientAPI == null){
+            logger.error("clientAPI is null");
+        }
         rebuild_index = generateNewIndexName();
         index = rebuild_index;
 
         logger.info("creating index {}", rebuild_index);
 
-        CreateIndexRequestBuilder createIndexRequestBuilder =
-                ingest.client().admin().indices().prepareCreate(rebuild_index);
+        ElasticsearchClient esClient = clientAPI.client();
+        CreateIndexRequestBuilder createIndexRequestBuilder = new CreateIndexRequestBuilder(esClient, CreateIndexAction.INSTANCE, rebuild_index);
 
         if (isNotBlank(context.getSettings().get(TEMPLATE_SETTING))) {
             addTemplateToIndexRequest(createIndexRequestBuilder);
         }
 
         createIndexRequestBuilder.execute().actionGet();
+        logger.info("index {} created", rebuild_index);
     }
 
     private void addTemplateToIndexRequest(CreateIndexRequestBuilder createIndexRequestBuilder) throws IOException {
         String templateSource = context.getSettings().get(TEMPLATE_SETTING);
         File templateFile = new File(templateSource);
-        if (StringUtils.isNotBlank(templateSource) && !templateFile.exists()) {
+        if (isNotBlank(templateSource) && !templateFile.exists()) {
             logger.error("Template file {} can not be found! Feeder will be stopped.", templateSource);
             System.exit(-1);
         }
@@ -149,30 +200,31 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
 
     @Override
     public synchronized void afterFetch() throws IOException {
-        Ingest ingest = context.getIngest();
 
-        if(ingest == null) {
-            return;
-        }
+        logger.info("starting afterFetch() with rebuild_index: " + rebuild_index);
 
-        ingest.stopBulk(rebuild_index);
-        ingest.refreshIndex(rebuild_index);
-        if (getMetric().indices() != null && !getMetric().indices().isEmpty()) {
-            for (String index : ImmutableSet.copyOf(getMetric().indices())) {
-                logger.info("stopping bulk mode for index {} and refreshing...", rebuild_index);
-                ingest.stopBulk(index);
-                ingest.refreshIndex(index);
+        if(clientAPI != null) {
+            flushIngest();
+            clientAPI.stopBulk(rebuild_index);
+            clientAPI.refreshIndex(rebuild_index);
+            if (getMetric().indices() != null && !getMetric().indices().isEmpty()) {
+                for (String index : ImmutableSet.copyOf(getMetric().indices())) {
+                    logger.info("stopping bulk mode for index {} and refreshing...", rebuild_index);
+                    clientAPI.stopBulk(index);
+                    clientAPI.refreshIndex(index);
+                }
             }
+
+            List<String> existingIndices = getCurrentActiveIndices();
+            switchAliasToNewIndex(existingIndices);
+
+            // Remove old indices
+            List<String> allExistingIndices = getAllExistingIndices();
+            allExistingIndices.remove(rebuild_index);
+
+            removeOldIndices(allExistingIndices);
+            clientAPI.shutdown();
         }
-
-        List<String> existingIndices = getCurrentActiveIndices();
-        switchAliasToNewIndex(existingIndices);
-
-        // Remove old indices
-        List<String> allExistingIndices = getAllExistingIndices();
-        allExistingIndices.remove(rebuild_index);
-
-        removeOldIndices(allExistingIndices);
     }
 
     @Override
@@ -182,7 +234,6 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
     }
 
     private List<String> getOrderedIndexList(List<String> indexList) {
-        
         Map<DateTime, String> dateIndexMap = new HashMap<>();
         List<DateTime> datetimeList = new ArrayList<>();
 
@@ -193,12 +244,7 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
             logger.info("Adding index {} to map with datetime {}", foundIndex, indexDateTime);
         }
 
-        datetimeList.sort(new Comparator<DateTime>() {
-            @Override
-            public int compare(DateTime o1, DateTime o2) {
-                return o1.compareTo(o2);
-            }
-        });
+        Collections.sort(datetimeList);
 
         List<String> orderedIndexList = new ArrayList<>();
         for (DateTime aDatetimeList : datetimeList) {
@@ -209,28 +255,29 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
     }
 
     private List<String> getAllExistingIndices() {
-        Ingest ingest = context.getIngest();
-        try {
-            GetIndexResponse indexResponse = ingest.client().admin().indices().prepareGetIndex().addIndices(index_prefix + "*").execute().get();
-
-            logger.debug("Found indexes with index_prefix is \"{}\": {}", index_prefix, indexResponse.indices().length);
-
-            List<String> indexList =  new ArrayList<String>(Arrays.asList(indexResponse.indices()));
-
-            return indexList;
-
-        } catch (InterruptedException e) {
-           logger.error(e.getMessage(), e);
-           throw new RuntimeException(e.getMessage());
-        } catch (ExecutionException e) {
-           logger.error(e.getMessage(), e);
-           throw new RuntimeException(e.getMessage());
+        if(clientAPI == null){
+            logger.error("clientAPI is null!");
+            return null;
         }
+
+        ElasticsearchClient esClient = clientAPI.client();
+        GetIndexResponse getIndexResponse = esClient.prepareExecute(GetIndexAction.INSTANCE).setIndices(index_prefix + "*").execute().actionGet();
+        List<String> indexList = new ArrayList<>();
+        String[] indices = getIndexResponse.getIndices();
+        if (indices!= null && indices.length > 0) {
+            indexList.addAll(Arrays.asList(indices));
+        }
+        return indexList;
     }
 
     private List<String> getCurrentActiveIndices() {
-        Ingest ingest = context.getIngest();
-        GetAliasesResponse getAliasesResponse = ingest.client().admin().indices().prepareGetAliases(alias).execute().actionGet();
+        if(clientAPI == null){
+            logger.error("clientAPI is null!");
+            return null;
+        }
+
+        ElasticsearchClient esClient = clientAPI.client();
+        GetAliasesResponse getAliasesResponse = esClient.prepareExecute(GetAliasesAction.INSTANCE).setAliases(alias).execute().actionGet();
 
         List<String> existingIndices = new ArrayList<>();
         Iterator<ObjectCursor<String>> keysIterator = getAliasesResponse.getAliases().keys().iterator();
@@ -243,18 +290,21 @@ public class RebuildSink<C extends RebuildContext> extends StandardSink {
     }
 
     private void removeOldIndices(List<String> indices) {
-        Ingest ingest = context.getIngest();
-        List<String> orderedIndexList = getOrderedIndexList(indices);
-        for (int i = 0; i < (orderedIndexList.size() - keep_last_indices); i++) {
-            String existingIndex = orderedIndexList.get(i);
-            logger.info("DELETE existing index {}", existingIndex);
-            ingest.deleteIndex(existingIndex);
+        if(clientAPI != null){
+            List<String> orderedIndexList = getOrderedIndexList(indices);
+            for (int i = 0; i < (orderedIndexList.size() - keep_last_indices); i++) {
+                String existingIndex = orderedIndexList.get(i);
+                logger.info("DELETE existing index {}", existingIndex);
+                clientAPI.deleteIndex(existingIndex);
+            }
         }
     }
 
     private void switchAliasToNewIndex(List<String> existingIndices) {
-        Ingest ingest = context.getIngest();
-        IndicesAliasesRequestBuilder prepareAliasesRequest = ingest.client().admin().indices().prepareAliases();
+        logger.info("starting switchAliasToNewIndex() with rebuild_index: " + rebuild_index + "and alias: " +alias);
+
+        ElasticsearchClient esClient = clientAPI.client();
+        IndicesAliasesRequestBuilder prepareAliasesRequest = new IndicesAliasesRequestBuilder(esClient, IndicesAliasesAction.INSTANCE);
         prepareAliasesRequest.addAlias(rebuild_index, alias).execute().actionGet().isAcknowledged();
 
         Iterator<String> existingIndicesIterator = existingIndices.iterator();

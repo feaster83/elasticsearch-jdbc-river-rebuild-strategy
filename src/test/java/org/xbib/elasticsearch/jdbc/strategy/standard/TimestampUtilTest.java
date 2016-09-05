@@ -15,7 +15,7 @@
  */
 package org.xbib.elasticsearch.jdbc.strategy.standard;
 
-import org.elasticsearch.common.joda.time.DateTime;
+import org.joda.time.DateTime;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
